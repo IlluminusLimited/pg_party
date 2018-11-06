@@ -15,6 +15,17 @@ ActiveSupport.on_load(:active_record) do
   )
 
   begin
+    require "active_record/type_caster/map"
+    require "pg_party/type_caster"
+
+    ActiveRecord::TypeCaster::Map.prepend(
+      PgParty::TypeCaster
+    )
+  rescue LoadError
+    # this fix is only needed for rails 5+
+  end
+
+  begin
     require "active_record/connection_adapters/postgresql_adapter"
     require "pg_party/adapter/postgresql_methods"
 

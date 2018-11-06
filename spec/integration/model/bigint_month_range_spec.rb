@@ -106,25 +106,52 @@ RSpec.describe BigintMonthRange do
   end
 
   describe ".partition_key_in" do
-    let(:start_range) { current_date }
-    let(:end_range) { current_date + 1.day }
-    let(:error_message) { "#partition_key_in not available for complex partition keys" }
+    let(:start_date) { current_date }
+    let(:end_date) { current_date + 1.month }
+    let(:start_range) { [start_date.year, start_date.month] }
+    let(:end_range) { [end_date.year, end_date.month] }
+
+    let!(:record_one) { described_class.create!(created_at: current_time) }
+    let!(:record_two) { described_class.create!(created_at: current_time.end_of_month) }
+    let!(:record_three) { described_class.create!(created_at: (current_time + 1.month).end_of_month) }
 
     subject { described_class.partition_key_in(start_range, end_range) }
 
-    it "raises error" do
-      expect { subject }.to raise_error(RuntimeError, error_message)
+    context "when spanning a single partition" do
+      it { is_expected.to contain_exactly(record_one, record_two) }
+    end
+
+    context "when spanning multiple partitions" do
+      let(:end_date) { current_date + 2.months }
+
+      it { is_expected.to contain_exactly(record_one, record_two, record_three) }
+    end
+
+    context "when chaining methods" do
+      subject { described_class.partition_key_in(start_range, end_range).where(id: record_one.id) }
+
+      it { is_expected.to contain_exactly(record_one) }
     end
   end
 
   describe ".partition_key_eq" do
-    let(:partition_key) { current_date }
-    let(:error_message) { "#partition_key_eq not available for complex partition keys" }
+    let(:partition_date) { current_date }
+    let(:partition_key) { [partition_date.year, partition_date.month] }
+
+    let!(:record_one) { described_class.create!(created_at: current_time) }
+    let!(:record_two) { described_class.create!(created_at: current_time.end_of_month) }
+    let!(:record_three) { described_class.create!(created_at: (current_time + 1.month).end_of_month) }
 
     subject { described_class.partition_key_eq(partition_key) }
 
-    it "raises error" do
-      expect { subject }.to raise_error(RuntimeError, error_message)
+    context "when partition key in first partition" do
+      it { is_expected.to contain_exactly(record_one, record_two) }
+    end
+
+    context "when partition key in second partition" do
+      let(:partition_date) { current_date + 1.month }
+
+      it { is_expected.to contain_exactly(record_three) }
     end
   end
 end

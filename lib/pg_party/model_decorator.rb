@@ -47,23 +47,27 @@ module PgParty
     end
 
     def partition_key_eq(value)
-      partition_key_check_for(:partition_key_eq)
-
-      where(partition_key_as_arel.eq(value))
+      if complex_partition_key
+        complex_partition_key_eq(value)
+      else
+        simple_partition_key_eq(value)
+      end
     end
 
     def range_partition_key_in(start_range, end_range)
-      partition_key_check_for(:partition_key_in)
-
-      node = partition_key_as_arel
-
-      where(node.gteq(start_range).and(node.lt(end_range)))
+      if complex_partition_key
+        complex_range_partition_key_in(start_range, end_range)
+      else
+        simple_range_partition_key_in(start_range, end_range)
+      end
     end
 
     def list_partition_key_in(*values)
-      partition_key_check_for(:partition_key_in)
-
-      where(partition_key_as_arel.in(values.flatten))
+      if complex_partition_key
+        complex_list_partition_key_in(values)
+      else
+        simple_list_partition_key_in(values)
+      end
     end
 
     def partitions
@@ -99,12 +103,52 @@ module PgParty
 
     private
 
-    def create_partition(migration_method, table_name, **options)
-      transaction { connection.send(migration_method, table_name, **options) }
+    def simple_partition_key_eq(value)
+      where(partition_key => value)
     end
 
-    def partition_key_check_for(name)
-      raise "##{name} not available for complex partition keys" if complex_partition_key
+    def complex_partition_key_eq(value)
+      subquery = base_class
+        .unscoped
+        .where("(#{partition_key}) = (?)", value)
+        .select(primary_key)
+        .to_sql
+
+      where(arel_table[primary_key].in(Arel.sql(subquery)))
+    end
+
+    def simple_range_partition_key_in(start_range, end_range)
+      node = partition_key_as_arel
+
+      where(node.gteq(start_range).and(node.lt(end_range)))
+    end
+
+    def complex_range_partition_key_in(start_range, end_range)
+      subquery = base_class
+        .unscoped
+        .where("(#{partition_key}) >= (?) AND (#{partition_key}) < (?)", start_range, end_range)
+        .select(primary_key)
+        .to_sql
+
+      where(arel_table[primary_key].in(Arel.sql(subquery)))
+    end
+
+    def simple_list_partition_key_in(values)
+      where(partition_key_as_arel.in(values.flatten))
+    end
+
+    def complex_list_partition_key_in(values)
+      subquery = base_class
+        .unscoped
+        .where("(#{partition_key}) IN (?)", values.flatten)
+        .select(primary_key)
+        .to_sql
+
+      where(arel_table[primary_key].in(Arel.sql(subquery)))
+    end
+
+    def create_partition(migration_method, table_name, **options)
+      transaction { connection.send(migration_method, table_name, **options) }
     end
 
     def cache_key
